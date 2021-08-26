@@ -91,7 +91,13 @@ func (e *ErrorSet) Is(err error) bool {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
-	return len(e.errs) == 1 && errors.Is(e.errs[0], err)
+	for _, ee := range e.errs {
+		if errors.Is(ee, err) {
+			return true
+		}
+	}
+
+	return false
 }
 
 // TimeoutError represents a timeout error.
@@ -159,8 +165,15 @@ func ExpectedError(err error) error {
 	return expectedError{err}
 }
 
+// ExpectedErrorf makes an expected error from given format and arguments.
+func ExpectedErrorf(format string, a ...interface{}) error {
+	return ExpectedError(fmt.Errorf(format, a...))
+}
+
 // UnexpectedError error represents an error that is unexpected by the retrying
 // function. This error is fatal.
+//
+// Deprecated: all errors are unexpected by default, just return them.
 func UnexpectedError(err error) error {
 	if err == nil {
 		return nil

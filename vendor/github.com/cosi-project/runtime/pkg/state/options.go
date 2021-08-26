@@ -4,6 +4,8 @@
 
 package state
 
+import "github.com/cosi-project/runtime/pkg/resource"
+
 // GetOptions for the CoreState.Get function.
 type GetOptions struct {
 	Owner string
@@ -37,7 +39,17 @@ func WithCreateOwner(owner string) CreateOption {
 
 // UpdateOptions for the CoreState.Update function.
 type UpdateOptions struct {
-	Owner string
+	ExpectedPhase *resource.Phase
+	Owner         string
+}
+
+// DefaultUpdateOptions returns default value for UpdateOptions.
+func DefaultUpdateOptions() UpdateOptions {
+	phase := resource.PhaseRunning
+
+	return UpdateOptions{
+		ExpectedPhase: &phase,
+	}
 }
 
 // UpdateOption builds UpdateOptions.
@@ -47,6 +59,24 @@ type UpdateOption func(*UpdateOptions)
 func WithUpdateOwner(owner string) UpdateOption {
 	return func(opts *UpdateOptions) {
 		opts.Owner = owner
+	}
+}
+
+// WithExpectedPhase modifies expected resource phase for the update request.
+//
+// Default value is resource.PhaseRunning.
+func WithExpectedPhase(phase resource.Phase) UpdateOption {
+	return func(opts *UpdateOptions) {
+		opts.ExpectedPhase = &phase
+	}
+}
+
+// WithExpectedPhaseAny accepts any resource phase for the update request.
+//
+// Default value is resource.PhaseRunning.
+func WithExpectedPhaseAny() UpdateOption {
+	return func(opts *UpdateOptions) {
+		opts.ExpectedPhase = nil
 	}
 }
 
@@ -81,14 +111,24 @@ func WithDestroyOwner(owner string) DestroyOption {
 }
 
 // WatchOptions for the CoreState.Watch function.
-type WatchOptions struct{}
+type WatchOptions struct {
+	TailEvents int
+}
 
 // WatchOption builds WatchOptions.
 type WatchOption func(*WatchOptions)
 
+// WithTailEvents returns N most recent events as part of the response.
+func WithTailEvents(n int) WatchOption {
+	return func(opts *WatchOptions) {
+		opts.TailEvents = n
+	}
+}
+
 // WatchKindOptions for the CoreState.WatchKind function.
 type WatchKindOptions struct {
 	BootstrapContents bool
+	TailEvents        int
 }
 
 // WatchKindOption builds WatchOptions.
@@ -98,5 +138,12 @@ type WatchKindOption func(*WatchKindOptions)
 func WithBootstrapContents(enable bool) WatchKindOption {
 	return func(opts *WatchKindOptions) {
 		opts.BootstrapContents = enable
+	}
+}
+
+// WithKindTailEvents returns N most recent events as part of the response.
+func WithKindTailEvents(n int) WatchKindOption {
+	return func(opts *WatchKindOptions) {
+		opts.TailEvents = n
 	}
 }

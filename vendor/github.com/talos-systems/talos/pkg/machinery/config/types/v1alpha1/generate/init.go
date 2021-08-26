@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"net/url"
 
+	"github.com/AlekSi/pointer"
+
 	v1alpha1 "github.com/talos-systems/talos/pkg/machinery/config/types/v1alpha1"
 	"github.com/talos-systems/talos/pkg/machinery/config/types/v1alpha1/machine"
 	"github.com/talos-systems/talos/pkg/machinery/constants"
@@ -49,6 +51,11 @@ func initUd(in *Input) (*v1alpha1.Config, error) {
 		},
 		MachineDisks:                in.MachineDisks,
 		MachineSystemDiskEncryption: in.SystemDiskEncryptionConfig,
+		MachineFeatures:             &v1alpha1.FeaturesConfig{},
+	}
+
+	if in.VersionContract.SupportsRBACFeature() {
+		machine.MachineFeatures.RBAC = pointer.ToBool(true)
 	}
 
 	certSANs := in.GetAPIServerSANs()

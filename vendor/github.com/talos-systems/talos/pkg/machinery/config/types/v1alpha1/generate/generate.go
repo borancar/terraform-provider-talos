@@ -21,6 +21,7 @@ import (
 	v1alpha1 "github.com/talos-systems/talos/pkg/machinery/config/types/v1alpha1"
 	"github.com/talos-systems/talos/pkg/machinery/config/types/v1alpha1/machine"
 	"github.com/talos-systems/talos/pkg/machinery/constants"
+	"github.com/talos-systems/talos/pkg/machinery/role"
 )
 
 // Config returns the talos config for a given node type.
@@ -51,7 +52,8 @@ func Config(t machine.Type, in *Input) (c *v1alpha1.Config, err error) {
 //
 //nolint:maligned
 type Input struct {
-	Certs *Certs
+	Certs           *Certs
+	VersionContract *config.VersionContract
 
 	// ControlplaneEndpoint is the canonical address of the kubernetes control
 	// plane.  It can be a DNS name, the IP address of a load balancer, or
@@ -381,13 +383,11 @@ func NewTalosCA(currentTime time.Time) (ca *x509.CertificateAuthority, err error
 	return x509.NewSelfSignedCertificateAuthority(opts...)
 }
 
-// NewAdminCertificateAndKey generates the admin Talos certifiate and key.
-func NewAdminCertificateAndKey(currentTime time.Time, ca *x509.PEMEncodedCertificateAndKey, loopback string) (p *x509.PEMEncodedCertificateAndKey, err error) {
-	ips := []net.IP{net.ParseIP(loopback)}
-
+// NewAdminCertificateAndKey generates the admin Talos certificate and key.
+func NewAdminCertificateAndKey(currentTime time.Time, ca *x509.PEMEncodedCertificateAndKey, roles role.Set, ttl time.Duration) (p *x509.PEMEncodedCertificateAndKey, err error) {
 	opts := []x509.Option{
-		x509.IPAddresses(ips),
-		x509.NotAfter(currentTime.Add(87600 * time.Hour)),
+		x509.Organization(roles.Strings()...),
+		x509.NotAfter(currentTime.Add(ttl)),
 		x509.NotBefore(currentTime),
 	}
 
@@ -415,14 +415,12 @@ func NewInput(clustername, endpoint, kubernetesVersion string, secrets *SecretsB
 		}
 	}
 
-	var loopback, podNet, serviceNet string
+	var podNet, serviceNet string
 
 	if tnet.IsIPv6(net.ParseIP(endpoint)) {
-		loopback = "::1"
 		podNet = constants.DefaultIPv6PodNet
 		serviceNet = constants.DefaultIPv6ServiceNet
 	} else {
-		loopback = "127.0.0.1"
 		podNet = constants.DefaultIPv4PodNet
 		serviceNet = constants.DefaultIPv4ServiceNet
 	}
@@ -430,7 +428,8 @@ func NewInput(clustername, endpoint, kubernetesVersion string, secrets *SecretsB
 	secrets.Certs.Admin, err = NewAdminCertificateAndKey(
 		secrets.Clock.Now(),
 		secrets.Certs.OS,
-		loopback,
+		options.Roles,
+		87600*time.Hour,
 	)
 
 	if err != nil {
@@ -450,6 +449,7 @@ func NewInput(clustername, endpoint, kubernetesVersion string, secrets *SecretsB
 
 	input = &Input{
 		Certs:                      secrets.Certs,
+		VersionContract:            options.VersionContract,
 		ControlPlaneEndpoint:       endpoint,
 		PodNet:                     []string{podNet},
 		ServiceNet:                 []string{serviceNet},
@@ -533,7 +533,7 @@ func genToken(lenFirst, lenSecond int) (string, error) {
 	return tokenTemp[0] + "." + tokenTemp[1], nil
 }
 
-// emptyIf returns empty string if the 2nd argument is empty string, otherwise returns the first argumewnt.
+// emptyIf returns empty string if the 2nd argument is empty string, otherwise returns the first argument.
 func emptyIf(str, check string) string {
 	if check == "" {
 		return ""

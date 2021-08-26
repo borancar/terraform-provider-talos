@@ -13,7 +13,7 @@ import (
 
 const (
 	// DefaultKernelVersion is the default Linux kernel version.
-	DefaultKernelVersion = "5.10.29-talos"
+	DefaultKernelVersion = "5.10.52-talos"
 
 	// KernelParamConfig is the kernel parameter name for specifying the URL.
 	// to the config.
@@ -54,10 +54,6 @@ const (
 	// KernelParamHostname is the kernel parameter name for specifying the
 	// hostname.
 	KernelParamHostname = "talos.hostname"
-
-	// KernelParamDefaultInterface is the kernel parameter for specifying the
-	// initial interface used to bootstrap the node.
-	KernelParamDefaultInterface = "talos.interface"
 
 	// KernelParamShutdown is the kernel parameter for specifying the
 	// shutdown type (halt/poweroff).
@@ -145,20 +141,41 @@ const (
 	// KubernetesEtcdCAKey is the path to the etcd CA private key.
 	KubernetesEtcdCAKey = EtcdPKIPath + "/" + "ca.key"
 
-	// KubernetesEtcdPeerCert is the path to the etcd CA certificate.
+	// KubernetesEtcdCert is the path to the etcd server certificate.
+	KubernetesEtcdCert = EtcdPKIPath + "/" + "server.crt"
+
+	// KubernetesEtcdKey is the path to the etcd server private key.
+	KubernetesEtcdKey = EtcdPKIPath + "/" + "server.key"
+
+	// KubernetesEtcdPeerCert is the path to the etcd peer certificate.
 	KubernetesEtcdPeerCert = EtcdPKIPath + "/" + "peer.crt"
 
-	// KubernetesEtcdPeerKey is the path to the etcd CA private key.
+	// KubernetesEtcdPeerKey is the path to the etcd peer private key.
 	KubernetesEtcdPeerKey = EtcdPKIPath + "/" + "peer.key"
+
+	// KubernetesEtcdAdminCert is the path to the talos client certificate.
+	KubernetesEtcdAdminCert = EtcdPKIPath + "/" + "admin.crt"
+
+	// KubernetesEtcdAdminKey is the path to the talos client private key.
+	KubernetesEtcdAdminKey = EtcdPKIPath + "/" + "admin.key"
 
 	// KubernetesEtcdListenClientPort defines the port etcd listen on for client traffic.
 	KubernetesEtcdListenClientPort = "2379"
 
 	// KubernetesAdminCertCommonName defines CN property of Kubernetes admin certificate.
-	KubernetesAdminCertCommonName = "apiserver-kubelet-client"
+	KubernetesAdminCertCommonName = "admin"
 
 	// KubernetesAdminCertOrganization defines Organization values of Kubernetes admin certificate.
 	KubernetesAdminCertOrganization = "system:masters"
+
+	// KubernetesAPIServerKubeletClientCommonName defines CN property of Kubernetes API server certificate to access kubelet API.
+	KubernetesAPIServerKubeletClientCommonName = "apiserver-kubelet-client"
+
+	// KubernetesControllerManagerOrganization defines Organization value of kube-controller-manager client certificate.
+	KubernetesControllerManagerOrganization = "system:kube-controller-manager"
+
+	// KubernetesSchedulerOrganization defines Organization value of kube-scheduler client certificate.
+	KubernetesSchedulerOrganization = "system:kube-scheduler"
 
 	// KubernetesAdminCertDefaultLifetime defines default lifetime for Kubernetes generated admin certificate.
 	KubernetesAdminCertDefaultLifetime = 365 * 24 * time.Hour
@@ -192,7 +209,7 @@ const (
 	SystemKubeletPKIDir = "/system/secrets/kubelet"
 
 	// DefaultKubernetesVersion is the default target version of the control plane.
-	DefaultKubernetesVersion = "1.21.1"
+	DefaultKubernetesVersion = "1.21.3"
 
 	// DefaultControlPlanePort is the default port to use for the control plane.
 	DefaultControlPlanePort = 6443
@@ -219,7 +236,7 @@ const (
 	CoreDNSImage = "docker.io/coredns/coredns"
 
 	// DefaultCoreDNSVersion is the default version for the CoreDNS.
-	DefaultCoreDNSVersion = "1.8.0"
+	DefaultCoreDNSVersion = "1.8.4"
 
 	// LabelNodeRoleMaster is the node label required by a control plane node.
 	LabelNodeRoleMaster = "node-role.kubernetes.io/master"
@@ -237,7 +254,7 @@ const (
 	KubeletKubeconfig = "/etc/kubernetes/kubeconfig-kubelet"
 
 	// DefaultEtcdVersion is the default target version of etcd.
-	DefaultEtcdVersion = "v3.4.15"
+	DefaultEtcdVersion = "v3.4.16"
 
 	// EtcdRootTalosKey is the root etcd key for Talos-specific storage.
 	EtcdRootTalosKey = "talos:v1"
@@ -294,7 +311,7 @@ const (
 	TrustdPort = 50001
 
 	// DefaultContainerdVersion is the default container runtime version.
-	DefaultContainerdVersion = "1.5.2"
+	DefaultContainerdVersion = "1.5.5"
 
 	// SystemContainerdNamespace is the Containerd namespace for Talos services.
 	SystemContainerdNamespace = "system"
@@ -313,6 +330,9 @@ const (
 
 	// APISocketPath is the path to file socket of apid.
 	APISocketPath = SystemRunPath + "/apid/apid.sock"
+
+	// APIRuntimeSocketPath is the path to file socket of runtime server for apid.
+	APIRuntimeSocketPath = SystemRunPath + "/apid/runtime.sock"
 
 	// MachineSocketPath is the path to file socket of machine API.
 	MachineSocketPath = SystemRunPath + "/machined/machine.sock"
@@ -418,6 +438,12 @@ const (
 	// TODO: Once we get naming sorted we need to apply for a project specific address
 	// https://manage.ntppool.org/manage/vendor
 	DefaultNTPServer = "pool.ntp.org"
+
+	// DefaultPrimaryResolver is the default primary DNS server.
+	DefaultPrimaryResolver = "1.1.1.1"
+
+	// DefaultSecondaryResolver is the default secondary DNS server.
+	DefaultSecondaryResolver = "8.8.8.8"
 )
 
 // See https://linux.die.net/man/3/klogctl

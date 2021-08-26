@@ -6,6 +6,7 @@ package cluster
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"sort"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/talos-systems/go-retry/retry"
 	"google.golang.org/grpc/backoff"
+	"google.golang.org/grpc/codes"
 
 	machineapi "github.com/talos-systems/talos/pkg/machinery/api/machine"
 	"github.com/talos-systems/talos/pkg/machinery/client"
@@ -47,7 +49,7 @@ func (s *APIBootstrapper) Bootstrap(ctx context.Context, out io.Writer) error {
 
 	fmt.Fprintln(out, "waiting for API")
 
-	err = retry.Constant(5*time.Minute, retry.WithUnits(500*time.Millisecond)).Retry(func() error {
+	err = retry.Constant(5*time.Minute, retry.WithUnits(500*time.Millisecond)).RetryWithContext(nodeCtx, func(nodeCtx context.Context) error {
 		retryCtx, cancel := context.WithTimeout(nodeCtx, 500*time.Millisecond)
 		defer cancel()
 
@@ -64,16 +66,25 @@ func (s *APIBootstrapper) Bootstrap(ctx context.Context, out io.Writer) error {
 
 	fmt.Fprintln(out, "bootstrapping cluster")
 
-	return retry.Constant(backoff.DefaultConfig.MaxDelay, retry.WithUnits(100*time.Millisecond)).Retry(func() error {
+	return retry.Constant(backoff.DefaultConfig.MaxDelay, retry.WithUnits(100*time.Millisecond)).RetryWithContext(nodeCtx, func(nodeCtx context.Context) error {
 		retryCtx, cancel := context.WithTimeout(nodeCtx, 500*time.Millisecond)
 		defer cancel()
 
 		if err = cli.Bootstrap(retryCtx, &machineapi.BootstrapRequest{}); err != nil {
-			if strings.Contains(err.Error(), "connection refused") {
+			switch {
+			// deadline exceeded in case it's verbatim context error
+			case errors.Is(err, context.DeadlineExceeded):
+				return retry.ExpectedError(err)
+			// FailedPrecondition when time is not in sync yet on the server
+			// DeadlineExceeded when the call fails in the gRPC stack either on the server or client side
+			case client.StatusCode(err) == codes.FailedPrecondition || client.StatusCode(err) == codes.DeadlineExceeded:
+				return retry.ExpectedError(err)
+			// connection refused, including proxied connection refused via the endpoint to the node
+			case strings.Contains(err.Error(), "connection refused"):
 				return retry.ExpectedError(err)
 			}
 
-			return retry.UnexpectedError(err)
+			return err
 		}
 
 		return nil

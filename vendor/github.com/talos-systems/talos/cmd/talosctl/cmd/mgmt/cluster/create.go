@@ -107,6 +107,7 @@ var (
 	configPatch               string
 	configPatchControlPlane   string
 	configPatchJoin           string
+	badRTC                    bool
 )
 
 // createCmd represents the cluster up command.
@@ -491,6 +492,7 @@ func create(ctx context.Context) (err error) {
 			NanoCPUs:            nanoCPUs,
 			Disks:               disks,
 			SkipInjectingConfig: skipInjectingConfig,
+			BadRTC:              badRTC,
 		}
 
 		if i == 0 {
@@ -542,6 +544,7 @@ func create(ctx context.Context) (err error) {
 				Disks:               disks,
 				Config:              cfg,
 				SkipInjectingConfig: skipInjectingConfig,
+				BadRTC:              badRTC,
 			})
 	}
 
@@ -757,7 +760,7 @@ func init() {
 	createCmd.Flags().StringVar(&nodeInstallImage, "install-image", helpers.DefaultImage(images.DefaultInstallerImageRepository), "the installer image to use")
 	createCmd.Flags().StringVar(&nodeVmlinuzPath, "vmlinuz-path", helpers.ArtifactPath(constants.KernelAssetWithArch), "the compressed kernel image to use")
 	createCmd.Flags().StringVar(&nodeISOPath, "iso-path", "", "the ISO path to use for the initial boot (VM only)")
-	createCmd.Flags().StringVar(&nodeInitramfsPath, "initrd-path", helpers.ArtifactPath(constants.InitramfsAssetWithArch), "the uncompressed kernel image to use")
+	createCmd.Flags().StringVar(&nodeInitramfsPath, "initrd-path", helpers.ArtifactPath(constants.InitramfsAssetWithArch), "initramfs image to use")
 	createCmd.Flags().StringVar(&nodeDiskImagePath, "disk-image-path", "", "disk image to use")
 	createCmd.Flags().BoolVar(&applyConfigEnabled, "with-apply-config", false, "enable apply config when the VM is starting in maintenance mode")
 	createCmd.Flags().BoolVar(&bootloaderEnabled, "with-bootloader", true, "enable bootloader to load kernel and initramfs from disk image after install")
@@ -809,5 +812,6 @@ func init() {
 	createCmd.Flags().StringVar(&configPatch, "config-patch", "", "patch generated machineconfigs (applied to all node types)")
 	createCmd.Flags().StringVar(&configPatchControlPlane, "config-patch-control-plane", "", "patch generated machineconfigs (applied to 'init' and 'controlplane' types)")
 	createCmd.Flags().StringVar(&configPatchJoin, "config-patch-join", "", "patch generated machineconfigs (applied to 'join' type)")
+	createCmd.Flags().BoolVar(&badRTC, "bad-rtc", false, "launch VM with bad RTC state (QEMU only)")
 	Cmd.AddCommand(createCmd)
 }

@@ -24,7 +24,6 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
-	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	clusterapi "github.com/talos-systems/talos/pkg/machinery/api/cluster"
@@ -35,7 +34,7 @@ import (
 	resourceapi "github.com/talos-systems/talos/pkg/machinery/api/resource"
 	storageapi "github.com/talos-systems/talos/pkg/machinery/api/storage"
 	timeapi "github.com/talos-systems/talos/pkg/machinery/api/time"
-	"github.com/talos-systems/talos/pkg/machinery/client/config"
+	clientconfig "github.com/talos-systems/talos/pkg/machinery/client/config"
 	"github.com/talos-systems/talos/pkg/machinery/constants"
 )
 
@@ -103,7 +102,7 @@ func (c *Client) resolveConfigContext() error {
 }
 
 // GetConfigContext returns resolved config context.
-func (c *Client) GetConfigContext() *config.Context {
+func (c *Client) GetConfigContext() *clientconfig.Context {
 	if err := c.resolveConfigContext(); err != nil {
 		return nil
 	}
@@ -111,7 +110,9 @@ func (c *Client) GetConfigContext() *config.Context {
 	return c.options.configContext
 }
 
-func (c *Client) getEndpoints() []string {
+// GetEndpoints returns the client's endpoints from the override set with WithEndpoints
+// or from the configuration.
+func (c *Client) GetEndpoints() []string {
 	if c.options.unixSocketPath != "" {
 		return []string{c.options.unixSocketPath}
 	}
@@ -143,11 +144,11 @@ func New(ctx context.Context, opts ...OptionFunc) (c *Client, err error) {
 		}
 	}
 
-	if len(c.getEndpoints()) < 1 {
+	if len(c.GetEndpoints()) < 1 {
 		return nil, errors.New("failed to determine endpoints")
 	}
 
-	c.conn, err = c.getConn(ctx)
+	c.conn, err = c.GetConn(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create client connection: %w", err)
 	}
@@ -166,8 +167,9 @@ func New(ctx context.Context, opts ...OptionFunc) (c *Client, err error) {
 	return c, nil
 }
 
-func (c *Client) getConn(ctx context.Context, opts ...grpc.DialOption) (*grpc.ClientConn, error) {
-	endpoints := c.getEndpoints()
+// GetConn creates new gRPC connection.
+func (c *Client) GetConn(ctx context.Context, opts ...grpc.DialOption) (*grpc.ClientConn, error) {
+	endpoints := c.GetEndpoints()
 
 	var target string
 
@@ -223,7 +225,7 @@ func (c *Client) getConn(ctx context.Context, opts ...grpc.DialOption) (*grpc.Cl
 }
 
 // CredentialsFromConfigContext constructs the client Credentials from the given configuration Context.
-func CredentialsFromConfigContext(context *config.Context) (*Credentials, error) {
+func CredentialsFromConfigContext(context *clientconfig.Context) (*Credentials, error) {
 	caBytes, err := base64.StdEncoding.DecodeString(context.CA)
 	if err != nil {
 		return nil, fmt.Errorf("error decoding CA: %w", err)
@@ -253,8 +255,8 @@ func CredentialsFromConfigContext(context *config.Context) (*Credentials, error)
 // NewClientContextAndCredentialsFromConfig initializes Credentials from config file.
 //
 // Deprecated: use Option-based methods for client creation.
-func NewClientContextAndCredentialsFromConfig(p, ctx string) (context *config.Context, creds *Credentials, err error) {
-	c, err := config.Open(p)
+func NewClientContextAndCredentialsFromConfig(p, ctx string) (context *clientconfig.Context, creds *Credentials, err error) {
+	c, err := clientconfig.Open(p)
 	if err != nil {
 		return
 	}
@@ -267,7 +269,7 @@ func NewClientContextAndCredentialsFromConfig(p, ctx string) (context *config.Co
 // NewClientContextAndCredentialsFromParsedConfig initializes Credentials from parsed configuration.
 //
 // Deprecated: use Option-based methods for client creation.
-func NewClientContextAndCredentialsFromParsedConfig(c *config.Config, ctx string) (context *config.Context, creds *Credentials, err error) {
+func NewClientContextAndCredentialsFromParsedConfig(c *clientconfig.Config, ctx string) (context *clientconfig.Context, creds *Credentials, err error) {
 	if ctx != "" {
 		c.Context = ctx
 	}
@@ -490,17 +492,6 @@ func (c *Client) ResetGeneric(ctx context.Context, req *machineapi.ResetRequest)
 // Reboot implements the proto.MachineServiceClient interface.
 func (c *Client) Reboot(ctx context.Context) (err error) {
 	resp, err := c.MachineClient.Reboot(ctx, &empty.Empty{})
-
-	if err == nil {
-		_, err = FilterMessages(resp, err)
-	}
-
-	return
-}
-
-// Recover implements the proto.MachineServiceClient interface.
-func (c *Client) Recover(ctx context.Context, source machineapi.RecoverRequest_Source) (err error) {
-	resp, err := c.MachineClient.Recover(ctx, &machineapi.RecoverRequest{Source: source})
 
 	if err == nil {
 		_, err = FilterMessages(resp, err)
@@ -940,6 +931,17 @@ func (c *Client) EtcdRecover(ctx context.Context, snapshot io.Reader, callOption
 	return cli.CloseAndRecv()
 }
 
+// GenerateClientConfiguration implements proto.MachineServiceClient interface.
+func (c *Client) GenerateClientConfiguration(ctx context.Context, req *machineapi.GenerateClientConfigurationRequest, callOptions ...grpc.CallOption) (resp *machineapi.GenerateClientConfigurationResponse, err error) { //nolint:lll
+	resp, err = c.MachineClient.GenerateClientConfiguration(ctx, req, callOptions...)
+
+	var filtered interface{}
+	filtered, err = FilterMessages(resp, err)
+	resp, _ = filtered.(*machineapi.GenerateClientConfigurationResponse) //nolint:errcheck
+
+	return
+}
+
 // MachineStream is a common interface for streams returned by streaming APIs.
 type MachineStream interface {
 	Recv() (*common.Data, error)
@@ -959,7 +961,7 @@ func ReadStream(stream MachineStream) (io.ReadCloser, <-chan error, error) {
 		for {
 			data, err := stream.Recv()
 			if err != nil {
-				if err == io.EOF || status.Code(err) == codes.Canceled {
+				if err == io.EOF || StatusCode(err) == codes.Canceled {
 					return
 				}
 				//nolint:errcheck
