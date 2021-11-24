@@ -60,7 +60,7 @@ type MachineServiceClient interface {
 	Restart(ctx context.Context, in *RestartRequest, opts ...grpc.CallOption) (*RestartResponse, error)
 	Rollback(ctx context.Context, in *RollbackRequest, opts ...grpc.CallOption) (*RollbackResponse, error)
 	Reset(ctx context.Context, in *ResetRequest, opts ...grpc.CallOption) (*ResetResponse, error)
-	Recover(ctx context.Context, in *RecoverRequest, opts ...grpc.CallOption) (*RecoverResponse, error)
+	// Deprecated: Do not use.
 	RemoveBootkubeInitializedKey(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*RemoveBootkubeInitializedKeyResponse, error)
 	ServiceList(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*ServiceListResponse, error)
 	ServiceRestart(ctx context.Context, in *ServiceRestartRequest, opts ...grpc.CallOption) (*ServiceRestartResponse, error)
@@ -71,6 +71,8 @@ type MachineServiceClient interface {
 	SystemStat(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*SystemStatResponse, error)
 	Upgrade(ctx context.Context, in *UpgradeRequest, opts ...grpc.CallOption) (*UpgradeResponse, error)
 	Version(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*VersionResponse, error)
+	// GenerateClientConfiguration generates talosctl client configuration (talosconfig).
+	GenerateClientConfiguration(ctx context.Context, in *GenerateClientConfigurationRequest, opts ...grpc.CallOption) (*GenerateClientConfigurationResponse, error)
 }
 
 type machineServiceClient struct {
@@ -583,15 +585,7 @@ func (c *machineServiceClient) Reset(ctx context.Context, in *ResetRequest, opts
 	return out, nil
 }
 
-func (c *machineServiceClient) Recover(ctx context.Context, in *RecoverRequest, opts ...grpc.CallOption) (*RecoverResponse, error) {
-	out := new(RecoverResponse)
-	err := c.cc.Invoke(ctx, "/machine.MachineService/Recover", in, out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
+// Deprecated: Do not use.
 func (c *machineServiceClient) RemoveBootkubeInitializedKey(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*RemoveBootkubeInitializedKeyResponse, error) {
 	out := new(RemoveBootkubeInitializedKeyResponse)
 	err := c.cc.Invoke(ctx, "/machine.MachineService/RemoveBootkubeInitializedKey", in, out, opts...)
@@ -682,6 +676,15 @@ func (c *machineServiceClient) Version(ctx context.Context, in *emptypb.Empty, o
 	return out, nil
 }
 
+func (c *machineServiceClient) GenerateClientConfiguration(ctx context.Context, in *GenerateClientConfigurationRequest, opts ...grpc.CallOption) (*GenerateClientConfigurationResponse, error) {
+	out := new(GenerateClientConfigurationResponse)
+	err := c.cc.Invoke(ctx, "/machine.MachineService/GenerateClientConfiguration", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // MachineServiceServer is the server API for MachineService service.
 // All implementations must embed UnimplementedMachineServiceServer
 // for forward compatibility
@@ -724,7 +727,7 @@ type MachineServiceServer interface {
 	Restart(context.Context, *RestartRequest) (*RestartResponse, error)
 	Rollback(context.Context, *RollbackRequest) (*RollbackResponse, error)
 	Reset(context.Context, *ResetRequest) (*ResetResponse, error)
-	Recover(context.Context, *RecoverRequest) (*RecoverResponse, error)
+	// Deprecated: Do not use.
 	RemoveBootkubeInitializedKey(context.Context, *emptypb.Empty) (*RemoveBootkubeInitializedKeyResponse, error)
 	ServiceList(context.Context, *emptypb.Empty) (*ServiceListResponse, error)
 	ServiceRestart(context.Context, *ServiceRestartRequest) (*ServiceRestartResponse, error)
@@ -735,6 +738,8 @@ type MachineServiceServer interface {
 	SystemStat(context.Context, *emptypb.Empty) (*SystemStatResponse, error)
 	Upgrade(context.Context, *UpgradeRequest) (*UpgradeResponse, error)
 	Version(context.Context, *emptypb.Empty) (*VersionResponse, error)
+	// GenerateClientConfiguration generates talosctl client configuration (talosconfig).
+	GenerateClientConfiguration(context.Context, *GenerateClientConfigurationRequest) (*GenerateClientConfigurationResponse, error)
 	mustEmbedUnimplementedMachineServiceServer()
 }
 
@@ -861,10 +866,6 @@ func (UnimplementedMachineServiceServer) Reset(context.Context, *ResetRequest) (
 	return nil, status.Errorf(codes.Unimplemented, "method Reset not implemented")
 }
 
-func (UnimplementedMachineServiceServer) Recover(context.Context, *RecoverRequest) (*RecoverResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method Recover not implemented")
-}
-
 func (UnimplementedMachineServiceServer) RemoveBootkubeInitializedKey(context.Context, *emptypb.Empty) (*RemoveBootkubeInitializedKeyResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method RemoveBootkubeInitializedKey not implemented")
 }
@@ -903,6 +904,10 @@ func (UnimplementedMachineServiceServer) Upgrade(context.Context, *UpgradeReques
 
 func (UnimplementedMachineServiceServer) Version(context.Context, *emptypb.Empty) (*VersionResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Version not implemented")
+}
+
+func (UnimplementedMachineServiceServer) GenerateClientConfiguration(context.Context, *GenerateClientConfigurationRequest) (*GenerateClientConfigurationResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GenerateClientConfiguration not implemented")
 }
 func (UnimplementedMachineServiceServer) mustEmbedUnimplementedMachineServiceServer() {}
 
@@ -1492,24 +1497,6 @@ func _MachineService_Reset_Handler(srv interface{}, ctx context.Context, dec fun
 	return interceptor(ctx, in, info, handler)
 }
 
-func _MachineService_Recover_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(RecoverRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(MachineServiceServer).Recover(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: "/machine.MachineService/Recover",
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(MachineServiceServer).Recover(ctx, req.(*RecoverRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 func _MachineService_RemoveBootkubeInitializedKey_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(emptypb.Empty)
 	if err := dec(in); err != nil {
@@ -1690,6 +1677,24 @@ func _MachineService_Version_Handler(srv interface{}, ctx context.Context, dec f
 	return interceptor(ctx, in, info, handler)
 }
 
+func _MachineService_GenerateClientConfiguration_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GenerateClientConfigurationRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MachineServiceServer).GenerateClientConfiguration(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/machine.MachineService/GenerateClientConfiguration",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MachineServiceServer).GenerateClientConfiguration(ctx, req.(*GenerateClientConfigurationRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // MachineService_ServiceDesc is the grpc.ServiceDesc for MachineService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1778,10 +1783,6 @@ var MachineService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _MachineService_Reset_Handler,
 		},
 		{
-			MethodName: "Recover",
-			Handler:    _MachineService_Recover_Handler,
-		},
-		{
 			MethodName: "RemoveBootkubeInitializedKey",
 			Handler:    _MachineService_RemoveBootkubeInitializedKey_Handler,
 		},
@@ -1820,6 +1821,10 @@ var MachineService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Version",
 			Handler:    _MachineService_Version_Handler,
+		},
+		{
+			MethodName: "GenerateClientConfiguration",
+			Handler:    _MachineService_GenerateClientConfiguration_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

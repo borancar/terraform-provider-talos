@@ -6,6 +6,7 @@
 package v1alpha1
 
 import (
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"net"
@@ -20,6 +21,7 @@ import (
 	"github.com/talos-systems/talos/pkg/machinery/config"
 	"github.com/talos-systems/talos/pkg/machinery/config/types/v1alpha1/machine"
 	"github.com/talos-systems/talos/pkg/machinery/constants"
+	"github.com/talos-systems/talos/pkg/machinery/nethelpers"
 )
 
 var (
@@ -54,7 +56,7 @@ var (
 )
 
 // NetworkDeviceCheck defines the function type for checks.
-type NetworkDeviceCheck func(*Device) error
+type NetworkDeviceCheck func(*Device, map[string]string) error
 
 // Validate implements the config.Provider interface.
 //nolint:gocyclo,cyclop
@@ -123,8 +125,22 @@ func (c *Config) Validate(mode config.RuntimeMode, options ...config.ValidationO
 	}
 
 	if c.MachineConfig.MachineNetwork != nil {
+		bondedInterfaces := map[string]string{}
+
 		for _, device := range c.MachineConfig.MachineNetwork.NetworkInterfaces {
-			if err := ValidateNetworkDevices(device, CheckDeviceInterface, CheckDeviceAddressing); err != nil {
+			if device.Bond() != nil {
+				for _, iface := range device.Bond().Interfaces() {
+					if otherIface, exists := bondedInterfaces[iface]; exists && otherIface != device.Interface() {
+						result = multierror.Append(result, fmt.Errorf("interface %q is declared as part of two bonds: %q and %q", iface, otherIface, device.Interface()))
+					}
+
+					bondedInterfaces[iface] = device.Interface()
+				}
+			}
+		}
+
+		for _, device := range c.MachineConfig.MachineNetwork.NetworkInterfaces {
+			if err := ValidateNetworkDevices(device, bondedInterfaces, CheckDeviceInterface, CheckDeviceAddressing, CheckDeviceRoutes); err != nil {
 				result = multierror.Append(result, err)
 			}
 		}
@@ -279,7 +295,7 @@ func (manifests ClusterInlineManifests) Validate() error {
 
 // ValidateNetworkDevices runs the specified validation checks specific to the
 // network devices.
-func ValidateNetworkDevices(d *Device, checks ...NetworkDeviceCheck) error {
+func ValidateNetworkDevices(d *Device, bondedInterfaces map[string]string, checks ...NetworkDeviceCheck) error {
 	var result *multierror.Error
 
 	if d == nil {
@@ -291,14 +307,14 @@ func ValidateNetworkDevices(d *Device, checks ...NetworkDeviceCheck) error {
 	}
 
 	for _, check := range checks {
-		result = multierror.Append(result, check(d))
+		result = multierror.Append(result, check(d, bondedInterfaces))
 	}
 
 	return result.ErrorOrNil()
 }
 
 // CheckDeviceInterface ensures that the interface has been specified.
-func CheckDeviceInterface(d *Device) error {
+func CheckDeviceInterface(d *Device, bondedInterfaces map[string]string) error {
 	var result *multierror.Error
 
 	if d == nil {
@@ -309,16 +325,179 @@ func CheckDeviceInterface(d *Device) error {
 		result = multierror.Append(result, fmt.Errorf("[%s]: %w", "networking.os.device.interface", ErrRequiredSection))
 	}
 
+	if d.DeviceBond != nil {
+		result = multierror.Append(result, checkBond(d.DeviceBond))
+	}
+
+	if d.DeviceWireguardConfig != nil {
+		result = multierror.Append(result, checkWireguard(d.DeviceWireguardConfig))
+	}
+
+	return result.ErrorOrNil()
+}
+
+//nolint:gocyclo,cyclop
+func checkBond(b *Bond) error {
+	var result *multierror.Error
+
+	bondMode, err := nethelpers.BondModeByName(b.BondMode)
+	if err != nil {
+		result = multierror.Append(result, err)
+	}
+
+	_, err = nethelpers.BondXmitHashPolicyByName(b.BondHashPolicy)
+	if err != nil {
+		result = multierror.Append(result, err)
+	}
+
+	_, err = nethelpers.LACPRateByName(b.BondLACPRate)
+	if err != nil {
+		result = multierror.Append(result, err)
+	}
+
+	_, err = nethelpers.ARPValidateByName(b.BondARPValidate)
+	if err != nil {
+		result = multierror.Append(result, err)
+	}
+
+	_, err = nethelpers.ARPAllTargetsByName(b.BondARPAllTargets)
+	if err != nil {
+		result = multierror.Append(result, err)
+	}
+
+	_, err = nethelpers.PrimaryReselectByName(b.BondPrimaryReselect)
+	if err != nil {
+		result = multierror.Append(result, err)
+	}
+
+	_, err = nethelpers.FailOverMACByName(b.BondFailOverMac)
+	if err != nil {
+		result = multierror.Append(result, err)
+	}
+
+	_, err = nethelpers.ADSelectByName(b.BondADSelect)
+	if err != nil {
+		result = multierror.Append(result, err)
+	}
+
+	if b.BondMIIMon == 0 {
+		if b.BondUpDelay != 0 {
+			result = multierror.Append(result, fmt.Errorf("bond.upDelay can't be set if miiMon is zero"))
+		}
+
+		if b.BondDownDelay != 0 {
+			result = multierror.Append(result, fmt.Errorf("bond.downDelay can't be set if miiMon is zero"))
+		}
+	} else {
+		if b.BondUpDelay%b.BondMIIMon != 0 {
+			result = multierror.Append(result, fmt.Errorf("bond.upDelay should be a multiple of miiMon"))
+		}
+
+		if b.BondDownDelay%b.BondMIIMon != 0 {
+			result = multierror.Append(result, fmt.Errorf("bond.downDelay should be a multiple of miiMon"))
+		}
+	}
+
+	if len(b.BondARPIPTarget) > 0 {
+		result = multierror.Append(result, fmt.Errorf("bond.arpIPTarget is not supported"))
+	}
+
+	if b.BondLACPRate != "" && bondMode != nethelpers.BondMode8023AD {
+		result = multierror.Append(result, fmt.Errorf("bond.lacpRate is only available in 802.3ad mode"))
+	}
+
+	if b.BondADActorSystem != "" {
+		result = multierror.Append(result, fmt.Errorf("bond.adActorSystem is not supported"))
+	}
+
+	if (bondMode == nethelpers.BondMode8023AD || bondMode == nethelpers.BondModeALB || bondMode == nethelpers.BondModeTLB) && b.BondARPValidate != "" {
+		result = multierror.Append(result, fmt.Errorf("bond.arpValidate is not available in %s mode", bondMode))
+	}
+
+	if !(bondMode == nethelpers.BondModeActiveBackup || bondMode == nethelpers.BondModeALB || bondMode == nethelpers.BondModeTLB) && b.BondPrimary != "" {
+		result = multierror.Append(result, fmt.Errorf("bond.primary is not available in %s mode", bondMode))
+	}
+
+	if (bondMode == nethelpers.BondMode8023AD || bondMode == nethelpers.BondModeALB || bondMode == nethelpers.BondModeTLB) && b.BondARPInterval > 0 {
+		result = multierror.Append(result, fmt.Errorf("bond.arpInterval is not available in %s mode", bondMode))
+	}
+
+	if bondMode != nethelpers.BondModeRoundrobin && b.BondPacketsPerSlave > 1 {
+		result = multierror.Append(result, fmt.Errorf("bond.packetsPerSlave is not available in %s mode", bondMode))
+	}
+
+	if !(bondMode == nethelpers.BondModeALB || bondMode == nethelpers.BondModeTLB) && b.BondTLBDynamicLB > 0 {
+		result = multierror.Append(result, fmt.Errorf("bond.tlbDynamicTLB is not available in %s mode", bondMode))
+	}
+
+	if bondMode != nethelpers.BondMode8023AD && b.BondADActorSysPrio > 0 {
+		result = multierror.Append(result, fmt.Errorf("bond.adActorSysPrio is only available in 802.3ad mode"))
+	}
+
+	if bondMode != nethelpers.BondMode8023AD && b.BondADUserPortKey > 0 {
+		result = multierror.Append(result, fmt.Errorf("bond.adUserPortKey is only available in 802.3ad mode"))
+	}
+
+	return result.ErrorOrNil()
+}
+
+func checkWireguard(b *DeviceWireguardConfig) error {
+	var result *multierror.Error
+
+	// avoid pulling in wgctrl code to keep machinery dependencies slim
+	checkKey := func(key string) error {
+		raw, err := base64.StdEncoding.DecodeString(key)
+		if err != nil {
+			return err
+		}
+
+		if len(raw) != 32 {
+			return fmt.Errorf("wrong key %q length: %d", key, len(raw))
+		}
+
+		return nil
+	}
+
+	if err := checkKey(b.WireguardPrivateKey); err != nil {
+		result = multierror.Append(result, fmt.Errorf("private key is invalid: %w", err))
+	}
+
+	for _, peer := range b.WireguardPeers {
+		if err := checkKey(peer.WireguardPublicKey); err != nil {
+			result = multierror.Append(result, fmt.Errorf("public key invalid: %w", err))
+		}
+
+		if peer.WireguardEndpoint != "" {
+			if _, err := net.ResolveUDPAddr("", peer.WireguardEndpoint); err != nil {
+				result = multierror.Append(result, fmt.Errorf("peer endpoint %q is invalid: %w", peer.WireguardEndpoint, err))
+			}
+		}
+
+		for _, allowedIP := range peer.WireguardAllowedIPs {
+			if _, _, err := net.ParseCIDR(allowedIP); err != nil {
+				result = multierror.Append(result, fmt.Errorf("peer allowed IP %q is invalid: %w", allowedIP, err))
+			}
+		}
+	}
+
 	return result.ErrorOrNil()
 }
 
 // CheckDeviceAddressing ensures that an appropriate addressing method.
 // has been specified.
-func CheckDeviceAddressing(d *Device) error {
+//
+//nolint:gocyclo
+func CheckDeviceAddressing(d *Device, bondedInterfaces map[string]string) error {
 	var result *multierror.Error
 
 	if d == nil {
 		return fmt.Errorf("empty device")
+	}
+
+	if _, bonded := bondedInterfaces[d.Interface()]; bonded {
+		if d.DeviceDHCP || d.DeviceCIDR != "" || d.DeviceVIPConfig != nil {
+			result = multierror.Append(result, fmt.Errorf("[%s] %q: %s", "networking.os.device", d.DeviceInterface, "bonded interface shouldn't have any addressing methods configured"))
+		}
 	}
 
 	// Test for both dhcp and cidr specified
@@ -344,7 +523,7 @@ func CheckDeviceAddressing(d *Device) error {
 }
 
 // CheckDeviceRoutes ensures that the specified routes are valid.
-func CheckDeviceRoutes(d *Device) error {
+func CheckDeviceRoutes(d *Device, bondedInterfaces map[string]string) error {
 	var result *multierror.Error
 
 	if d == nil {
@@ -356,8 +535,10 @@ func CheckDeviceRoutes(d *Device) error {
 	}
 
 	for idx, route := range d.DeviceRoutes {
-		if _, _, err := net.ParseCIDR(route.Network()); err != nil {
-			result = multierror.Append(result, fmt.Errorf("[%s] %q: %w", "networking.os.device.route["+strconv.Itoa(idx)+"].Network", route.Network(), ErrInvalidAddress))
+		if route.Network() != "" {
+			if _, _, err := net.ParseCIDR(route.Network()); err != nil {
+				result = multierror.Append(result, fmt.Errorf("[%s] %q: %w", "networking.os.device.route["+strconv.Itoa(idx)+"].Network", route.Network(), ErrInvalidAddress))
+			}
 		}
 
 		if ip := net.ParseIP(route.Gateway()); ip == nil {

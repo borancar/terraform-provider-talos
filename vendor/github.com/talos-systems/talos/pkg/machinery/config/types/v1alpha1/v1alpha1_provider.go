@@ -273,6 +273,15 @@ func (m *MachineConfig) SystemDiskEncryption() config.SystemDiskEncryption {
 	return m.MachineSystemDiskEncryption
 }
 
+// Features implements the config.MachineConfig interface.
+func (m *MachineConfig) Features() config.Features {
+	if m.MachineFeatures == nil {
+		return &FeaturesConfig{}
+	}
+
+	return m.MachineFeatures
+}
+
 // Image implements the config.Provider interface.
 func (k *KubeletConfig) Image() string {
 	image := k.KubeletImage
@@ -769,7 +778,11 @@ func (b *Bond) AllSlavesActive() uint8 {
 
 // UseCarrier implements the MachineNetwork interface.
 func (b *Bond) UseCarrier() bool {
-	return b.BondUseCarrier
+	if b.BondUseCarrier == nil {
+		return true
+	}
+
+	return *b.BondUseCarrier
 }
 
 // ADActorSysPrio implements the MachineNetwork interface.
@@ -820,10 +833,6 @@ func (t *TimeConfig) Disabled() bool {
 
 // Servers implements the config.Provider interface.
 func (t *TimeConfig) Servers() []string {
-	if len(t.TimeServers) == 0 {
-		return []string{constants.DefaultNTPServer}
-	}
-
 	return t.TimeServers
 }
 
@@ -905,9 +914,19 @@ func (i *InstallConfig) Zero() bool {
 	return i.InstallWipe
 }
 
+// LegacyBIOSSupport implements the config.Provider interface.
+func (i *InstallConfig) LegacyBIOSSupport() bool {
+	return i.InstallLegacyBIOSSupport
+}
+
 // WithBootloader implements the config.Provider interface.
 func (i *InstallConfig) WithBootloader() bool {
 	return i.InstallBootloader
+}
+
+// Enabled implements the config.Provider interface.
+func (c *CoreDNS) Enabled() bool {
+	return !c.CoreDNSDisabled
 }
 
 // Image implements the config.Provider interface.

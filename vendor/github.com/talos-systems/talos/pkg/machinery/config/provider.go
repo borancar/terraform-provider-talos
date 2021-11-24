@@ -48,6 +48,7 @@ type MachineConfig interface {
 	Sysctls() map[string]string
 	Registries() Registries
 	SystemDiskEncryption() SystemDiskEncryption
+	Features() Features
 }
 
 // Disk represents the options available for partitioning, formatting, and
@@ -81,6 +82,7 @@ type Install interface {
 	Disk() (string, error)
 	ExtraKernelArgs() []string
 	Zero() bool
+	LegacyBIOSSupport() bool
 	WithBootloader() bool
 }
 
@@ -354,6 +356,7 @@ type Token interface {
 // CoreDNS defines the requirements for a config that pertains to CoreDNS
 // coredns options.
 type CoreDNS interface {
+	Enabled() bool
 	Image() string
 }
 
@@ -395,6 +398,11 @@ type Encryption interface {
 // SystemDiskEncryption accumulates settings for all system partitions encryption.
 type SystemDiskEncryption interface {
 	Get(label string) Encryption
+}
+
+// Features describe individual Talos features that can be switched on or off.
+type Features interface {
+	RBACEnabled() bool
 }
 
 // VolumeMount describes extra volume mount for the static pods.

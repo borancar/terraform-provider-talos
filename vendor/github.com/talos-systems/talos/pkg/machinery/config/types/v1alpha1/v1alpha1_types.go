@@ -25,6 +25,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/AlekSi/pointer"
 	humanize "github.com/dustin/go-humanize"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/talos-systems/crypto/x509"
@@ -241,6 +242,10 @@ var (
 				},
 			},
 		},
+	}
+
+	machineFeaturesExample = &FeaturesConfig{
+		RBAC: pointer.ToBool(true),
 	}
 
 	clusterConfigExample = struct {
@@ -612,6 +617,11 @@ type MachineConfig struct {
 	//   examples:
 	//     - value: machineSystemDiskEncryptionExample
 	MachineSystemDiskEncryption *SystemDiskEncryptionConfig `yaml:"systemDiskEncryption,omitempty"`
+	//   description: |
+	//     Features describe individual Talos features that can be switched on or off.
+	//   examples:
+	//     - value: machineFeaturesExample
+	MachineFeatures *FeaturesConfig `yaml:"features,omitempty"`
 }
 
 // ClusterConfig represents the cluster-wide config values.
@@ -841,6 +851,10 @@ type InstallConfig struct {
 	//     - false
 	//     - no
 	InstallWipe bool `yaml:"wipe"`
+	//   description: |
+	//     Indicates if MBR partition should be marked as bootable (active).
+	//     Should be enabled only for the systems with legacy BIOS that doesn't support GPT partitioning scheme.
+	InstallLegacyBIOSSupport bool `yaml:"legacyBIOSSupport,omitempty"`
 }
 
 // InstallDiskSizeMatcher disk size condition parser.
@@ -1017,6 +1031,9 @@ type PodCheckpointer struct {
 
 // CoreDNS represents the CoreDNS config values.
 type CoreDNS struct {
+	//   description: |
+	//     Disable coredns deployment on cluster bootstrap.
+	CoreDNSDisabled bool `yaml:"disabled,omitempty"`
 	//   description: |
 	//     The `image` field is an override to the default coredns image.
 	CoreDNSImage string `yaml:"image,omitempty"`
@@ -1523,6 +1540,7 @@ type Bond struct {
 	//   description: |
 	//     A bond option.
 	//     Please see the official kernel documentation.
+	//     Not supported at the moment.
 	BondARPIPTarget []string `yaml:"arpIPTarget,omitempty"`
 	//   description: |
 	//     A bond option.
@@ -1539,6 +1557,7 @@ type Bond struct {
 	//   description: |
 	//     A bond option.
 	//     Please see the official kernel documentation.
+	//     Not supported at the moment.
 	BondADActorSystem string `yaml:"adActorSystem,omitempty"`
 	//   description: |
 	//     A bond option.
@@ -1611,7 +1630,7 @@ type Bond struct {
 	//   description: |
 	//     A bond option.
 	//     Please see the official kernel documentation.
-	BondUseCarrier bool `yaml:"useCarrier,omitempty"`
+	BondUseCarrier *bool `yaml:"useCarrier,omitempty"`
 	//   description: |
 	//     A bond option.
 	//     Please see the official kernel documentation.
@@ -1716,6 +1735,13 @@ type SystemDiskEncryptionConfig struct {
 	//   description: |
 	//     Ephemeral partition encryption.
 	EphemeralPartition *EncryptionConfig `yaml:"ephemeral,omitempty"`
+}
+
+// FeaturesConfig describe individual Talos features that can be switched on or off.
+type FeaturesConfig struct {
+	//   description: |
+	//     Enable role-based access control (RBAC).
+	RBAC *bool `yaml:"rbac,omitempty"`
 }
 
 // VolumeMountConfig struct describes extra volume mount for the static pods.

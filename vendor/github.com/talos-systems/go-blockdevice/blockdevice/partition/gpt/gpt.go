@@ -5,10 +5,10 @@
 package gpt
 
 import (
-	"bytes"
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 
 	"github.com/google/uuid"
@@ -41,25 +41,32 @@ func (outOfSpaceError) OutOfSpaceError() {}
 
 // GPT represents the GUID Partition Table.
 type GPT struct {
-	f *os.File
-	l *lba.LBA
-	h *Header
-	e *Partitions
+	f               *os.File
+	l               *lba.LBA
+	h               *Header
+	e               *Partitions
+	markMBRBootable bool
 }
 
 // Open attempts to open a partition table on f.
 func Open(f *os.File) (g *GPT, err error) {
-	buf := make([]byte, 1)
+	buf := make([]byte, 16)
 
 	// PMBR protective entry starts at 446. The partition type is at offset
 	// 4 from the start of the PMBR protective entry.
-	_, err = f.ReadAt(buf, 450)
+	var n int
+
+	n, err = f.ReadAt(buf, 446)
 	if err != nil {
 		return nil, err
 	}
 
+	if n != len(buf) {
+		return nil, fmt.Errorf("incomplete read: %d != %d", n, len(buf))
+	}
+
 	// For GPT, the partition type should be 0xEE (EFI GPT).
-	if bytes.Equal(buf, []byte{0xEE}) {
+	if buf[4] == 0xEE {
 		l, err := lba.NewLBA(f)
 		if err != nil {
 			return nil, err
@@ -70,10 +77,11 @@ func Open(f *os.File) (g *GPT, err error) {
 		h := &Header{Buffer: b, LBA: l}
 
 		g = &GPT{
-			f: f,
-			l: l,
-			h: h,
-			e: &Partitions{h: h, devname: f.Name()},
+			f:               f,
+			l:               l,
+			h:               h,
+			e:               &Partitions{h: h, devname: f.Name()},
+			markMBRBootable: buf[0] == 0x80,
 		}
 
 		return g, nil
@@ -117,10 +125,11 @@ func New(f *os.File, setters ...Option) (g *GPT, err error) {
 	h.GUUID = guuid
 
 	g = &GPT{
-		f: f,
-		l: l,
-		h: h,
-		e: &Partitions{h: h, devname: f.Name()},
+		f:               f,
+		l:               l,
+		h:               h,
+		e:               &Partitions{h: h, devname: f.Name()},
+		markMBRBootable: opts.MarkMBRBootable,
 	}
 
 	return g, nil
@@ -344,6 +353,7 @@ func (g *GPT) Repair() error {
 // 	- https://en.wikipedia.org/wiki/GUID_Partition_Table#Protective_MBR_(LBA_0)
 // 	- https://www.syslinux.org/wiki/index.php?title=Doc/gpt
 // 	- https://en.wikipedia.org/wiki/Master_boot_record
+// 	- http://www.rodsbooks.com/gdisk/bios.html
 func (g *GPT) newPMBR(h *Header) ([]byte, error) {
 	p, err := g.l.ReadAt(0, 0, 512)
 	if err != nil {
@@ -355,16 +365,34 @@ func (g *GPT) newPMBR(h *Header) ([]byte, error) {
 
 	// PMBR protective entry.
 	b := p[446 : 446+16]
-	b[0] = 0x00
+
+	if g.markMBRBootable {
+		// Some BIOSes in legacy mode won't boot from a disk unless there is at least one
+		// partition in the MBR marked bootable.  Mark this partition as bootable.
+		b[0] = 0x80
+	} else {
+		b[0] = 0x00
+	}
 
 	// Partition type: EFI data partition.
 	b[4] = 0xee
+
+	// CHS for the start of the partition
+	copy(b[1:4], []byte{0x00, 0x02, 0x00})
+
+	// CHS for the end of the partition
+	copy(b[5:8], []byte{0xff, 0xff, 0xff})
 
 	// Partition start LBA.
 	binary.LittleEndian.PutUint32(b[8:12], 1)
 
 	// Partition length in sectors.
-	binary.LittleEndian.PutUint32(b[12:16], uint32(h.BackupLBA))
+	// This might overflow uint32, so check accordingly
+	if h.BackupLBA > math.MaxUint32 {
+		binary.LittleEndian.PutUint32(b[12:16], uint32(math.MaxUint32))
+	} else {
+		binary.LittleEndian.PutUint32(b[12:16], uint32(h.BackupLBA))
+	}
 
 	return p, nil
 }
